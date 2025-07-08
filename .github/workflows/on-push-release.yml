@@ -45,5 +45,5 @@ jobs:
           # A custom webhook event name.
           event-type: journey-release
           # JSON payload with extra information about the webhook event that your action or worklow may use.
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
+          client-payload: '{"repository": "${{ github.repository }}", "packages": [ "package1", "package2", "package3" ]}'
           
