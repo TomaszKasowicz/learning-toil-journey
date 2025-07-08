@@ -41,7 +41,7 @@ jobs:
           # GITHUB_TOKEN or a `repo` scoped Personal Access Token (PAT)
           token: ${{ secrets.APPS_DISPATCH_PAT }}
           # The full name of the repository to send the dispatch.
-          repository: TomaszKasowicz/release-toil-apps
+          repository: TomaszKasowicz/release-toil-app
           # A custom webhook event name.
           event-type: journey-release
           # JSON payload with extra information about the webhook event that your action or worklow may use.
