@@ -31,3 +31,19 @@ jobs:
         run: |
           echo Add other actions to build,
           echo test, and deploy your project.
+
+      - name: Repository Dispatch
+        if: github.event_name == 'workflow_dispatch' # Condition to check if the event type is workflow_dispatch
+        # You may pin to the exact commit or the version.
+        # uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0
+        uses: peter-evans/repository-dispatch@v3.0.0
+        with:
+          # GITHUB_TOKEN or a `repo` scoped Personal Access Token (PAT)
+          token: ${{ secrets.APPS_DISPATCH_PAT }}
+          # The full name of the repository to send the dispatch.
+          repository: TomaszKasowicz/release-toil-apps
+          # A custom webhook event name.
+          event-type: journey-release
+          # JSON payload with extra information about the webhook event that your action or worklow may use.
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
+          
