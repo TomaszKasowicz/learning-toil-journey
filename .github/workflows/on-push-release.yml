@@ -32,18 +32,30 @@ jobs:
           echo Add other actions to build,
           echo test, and deploy your project.
 
-      - name: Repository Dispatch
-        if: github.event_name == 'workflow_dispatch' # Condition to check if the event type is workflow_dispatch
-        # You may pin to the exact commit or the version.
-        # uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0
-        uses: peter-evans/repository-dispatch@v3.0.0
-        with:
-          # GITHUB_TOKEN or a `repo` scoped Personal Access Token (PAT)
-          token: ${{ secrets.APPS_DISPATCH_PAT }}
-          # The full name of the repository to send the dispatch.
-          repository: TomaszKasowicz/release-toil-app
-          # A custom webhook event name.
-          event-type: journey-release
-          # JSON payload with extra information about the webhook event that your action or worklow may use.
-          client-payload: '{"repository": "${{ github.repository }}", "packages": [ "package1", "package2", "package3" ]}'
+      # - name: Repository Dispatch
+      #   if: github.event_name == 'workflow_dispatch' # Condition to check if the event type is workflow_dispatch
+      #   # You may pin to the exact commit or the version.
+      #   # uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0
+      #   uses: peter-evans/repository-dispatch@v3.0.0
+      #   with:
+      #     # GITHUB_TOKEN or a `repo` scoped Personal Access Token (PAT)
+      #     token: ${{ secrets.APPS_DISPATCH_PAT }}
+      #     # The full name of the repository to send the dispatch.
+      #     repository: TomaszKasowicz/release-toil-app
+      #     # A custom webhook event name.
+      #     event-type: journey-release
+      #     # JSON payload with extra information about the webhook event that your action or worklow may use.
+      #     client-payload: '{"repository": "${{ github.repository }}", "packages": [ "package1", "package2", "package3" ]}'
           
+
+      - name: Repository Dispatch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer <YOUR-TOKEN>" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/TomaszKasowicz/release-toil-app/dispatches \
+            -d '{"event_type":"on-demand-test","client_payload":{"unit":false,"integration":true}}'
