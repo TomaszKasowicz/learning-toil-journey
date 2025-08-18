@@ -1,3 +1,4 @@
+# .github/workflows/manual-status-setter.yml
 name: 'Manual Status Setter (gh cli)'
 
 on:
@@ -9,12 +10,19 @@ on:
         required: true
         type: string
       fail:
+        description: 'Set to true to simulate a failure for testing'
         required: false
         type: boolean
         default: false
+  # New trigger: This allows the workflow to be triggered by a PR comment
+  issue_comment:
+    types: [created]
 
+# Updated permissions to allow reading PR and issue data for the new trigger
 permissions:
   statuses: write
+  pull-requests: read
+  issues: read
 
 env:
   REPO_NAME: ${{ github.event.repository.name }}
@@ -22,24 +30,58 @@ env:
 
 jobs:
   manual-check-job:
+    # This condition ensures the job only runs for the manual dispatch event
+    # or when a comment containing "run slow ci" is made on a pull request.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, 'run slow ci'))
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Get the HEAD commit SHA of the Pull Request using gh api
+      # Step 1: Determine the PR Number based on the trigger event
+      - name: 'Get PR Number'
+        id: get_pr_number
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "pr_number=${{ github.event.inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" == "issue_comment" ]; then
+            echo "pr_number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Step 2: Get the HEAD commit SHA of the Pull Request using gh api
       - name: 'Get PR SHA'
         id: get_sha
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Use gh api with the --jq flag to directly query the head commit SHA
           PR_SHA=$(gh api \
-            "/repos/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/pulls/${{ inputs.pr_number }}" \
+            "/repos/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/pulls/${{ steps.get_pr_number.outputs.pr_number }}" \
             --jq '.head.sha')
-
-          echo "Found SHA: $PR_SHA for PR #${{ github.event.inputs.pr_number }}"
+          echo "Found SHA: $PR_SHA for PR #${{ steps.get_pr_number.outputs.pr_number }}"
           echo "sha=$PR_SHA" >> "$GITHUB_OUTPUT"
 
-      # Step 2: Set the initial "pending" status on that specific commit
+      # Step 3 (New): Check if the 'success' status is already set for this commit
+      - name: 'Check existing status'
+        id: check_status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # This command fetches the statuses for the commit, filters for the specific context,
+          # checks if the state is 'success', and outputs the result.
+          EXISTING_STATUS=$(gh api \
+            "/repos/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/commits/${{ steps.get_sha.outputs.sha }}/status" \
+            --jq '.statuses[] | select(.context=="continuous-integration/slow-ci") | .state' | grep 'success' || true)
+
+          if [ "$EXISTING_STATUS" == "success" ]; then
+            echo "Status 'continuous-integration/slow-ci' is already 'success'. Halting execution."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Status is not 'success'. Proceeding with checks."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Step 4: Set the initial "pending" status on that specific commit
       - name: 'Set initial pending status'
+        if: steps.check_status.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -50,22 +92,29 @@ jobs:
             -f context='continuous-integration/slow-ci' \
             -f description='Performing slow CI checks...'
 
-      # Step 3: Run the actual task
+      # Step 5: Run the actual task
       - name: 'Run complex task...'
+        if: steps.check_status.outputs.skip == 'false'
         run: |
-          echo "Doing some work for PR #${{ github.event.inputs.pr_number }}..."
+          echo "Doing some work for PR #${{ steps.get_pr_number.outputs.pr_number }}..."
           sleep 10
-          # This is where your logic would determine success or failure
-          if [ "${{ inputs.fail }}" == "true"]; then
+          # Determine failure condition based on trigger
+          FAIL_CONDITION="false"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            FAIL_CONDITION="${{ github.event.inputs.fail }}"
+          fi
+
+          if [ "$FAIL_CONDITION" == "true" ]; then
             echo "the 'fail' input was set to true. Simulating failure."
             exit 1
           else
             echo "The 'fail' input was false. The step will succeed."
           fi
 
-      # Step 4: Set the final "success" status on the same commit
+      # Step 6: Set the final "success" status on the same commit
       - name: 'Set final success status'
-        if: success() # Only run if previous steps succeeded
+        # Note: The top-level 'if' on the job handles the trigger logic, so this only needs to check for step success.
+        if: success() && steps.check_status.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -76,11 +125,12 @@ jobs:
             -f context='continuous-integration/slow-ci' \
             -f description='Custom checks passed!'
 
-      # Step 5 (Optional): Set a "failure" status if the job fails
+      # Step 7: Set a "failure" status if the job fails
       - name: 'Set final failure status'
-        if: failure() # Only run if any previous step failed
+        if: failure() && steps.check_status.outputs.skip == 'false'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Note: The GITHUB_TOKEN secret is automatically available to the gh cli
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api \
             --method POST \
