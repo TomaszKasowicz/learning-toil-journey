@@ -1,0 +1,87 @@
+name: 'Manual Status Setter (gh cli)'
+
+on:
+  # This allows the workflow to be run manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'The number of the PR to post the status to'
+        required: true
+        type: string
+      fail:
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REPO_NAME: ${{ github.event.repository.name }}
+  REPO_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  manual-check-job:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Get the HEAD commit SHA of the Pull Request using gh api
+      - name: 'Get PR SHA'
+        id: get_sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use gh api with the --jq flag to directly query the head commit SHA
+          PR_SHA=$(gh api \
+            "/repos/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/pulls/${{ inputs.pr_number }}" \
+            --jq '.head.sha')
+
+          echo "Found SHA: $PR_SHA for PR #${{ github.event.inputs.pr_number }}"
+          echo "sha=$PR_SHA" >> "$GITHUB_OUTPUT"
+
+      # Step 2: Set the initial "pending" status on that specific commit
+      - name: 'Set initial pending status'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            "/repos/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/statuses/${{ steps.get_sha.outputs.sha }}" \
+            -f state='pending' \
+            -f context='continuous-integration/slow-ci' \
+            -f description='Performing slow CI checks...'
+
+      # Step 3: Run the actual task
+      - name: 'Run complex task...'
+        run: |
+          echo "Doing some work for PR #${{ github.event.inputs.pr_number }}..."
+          sleep 10
+          # This is where your logic would determine success or failure
+          if [ "${{ inputs.fail }}" == "true"]; then
+            echo "the 'fail' input was set to true. Simulating failure."
+            exit 1
+          else
+            echo "The 'fail' input was false. The step will succeed."
+          fi
+
+      # Step 4: Set the final "success" status on the same commit
+      - name: 'Set final success status'
+        if: success() # Only run if previous steps succeeded
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            "/repos/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/statuses/${{ steps.get_sha.outputs.sha }}" \
+            -f state='success' \
+            -f context='continuous-integration/slow-ci' \
+            -f description='Custom checks passed!'
+
+      # Step 5 (Optional): Set a "failure" status if the job fails
+      - name: 'Set final failure status'
+        if: failure() # Only run if any previous step failed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            "/repos/${{ env.REPO_OWNER }}/${{ env.REPO_NAME }}/statuses/${{ steps.get_sha.outputs.sha }}" \
+            -f state='failure' \
+            -f context='continuous-integration/slow-ci' \
+            -f description='Custom checks failed!'
