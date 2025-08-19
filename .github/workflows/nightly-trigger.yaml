@@ -1,0 +1,87 @@
+# .github/workflows/nightly-trigger.yml
+name: 'Nightly CI Trigger'
+
+on:
+  schedule:
+    # Runs at 02:00 UTC every day. You can adjust the schedule as needed.
+    - cron: '0 2 * * *'
+  # Allow manual trigger for testing purposes
+  workflow_dispatch:
+
+permissions:
+  # Required to list PRs and read their commit statuses
+  pull-requests: read
+  statuses: read
+  # Required to trigger another workflow
+  actions: write
+
+jobs:
+  # This job gets a list of all open PRs that do not have a 'success' status
+  # and outputs them as a JSON array.
+  find-prs-to-check:
+    runs-on: ubuntu-latest
+    outputs:
+      prs: ${{ steps.filter_prs.outputs.prs }}
+    steps:
+      - name: 'Find and Filter Open PRs'
+        id: filter_prs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get all open PRs with their number and head commit SHA
+          OPEN_PRS=$(gh pr list --state open --json number,headRefOid)
+          
+          # Initialize an empty JSON array for PRs that need to be run
+          PRS_TO_RUN="[]"
+          
+          echo "Found open PRs: $(echo "$OPEN_PRS" | jq '.[].number')"
+
+          # Loop through each PR to check its status
+          for pr_number in $(echo "$OPEN_PRS" | jq -r '.[].number'); do
+            PR_SHA=$(echo "$OPEN_PRS" | jq -r --argjson pr_num "$pr_number" '.[] | select(.number==$pr_num) | .headRefOid')
+            
+            if [ -z "$PR_SHA" ] || [ "$PR_SHA" == "null" ]; then
+              echo "Could not retrieve SHA for PR #${pr_number}. Skipping."
+              continue
+            fi
+
+            # Check if the 'success' state is set for our specific context.
+            SUCCESS_STATUS=$(gh api \
+              "/repos/${{ github.repository }}/commits/${PR_SHA}/status" \
+              --jq '.statuses[] | select(.context=="continuous-integration/slow-ci") | .state' | grep 'success' || true)
+
+            if [ "$SUCCESS_STATUS" == "success" ]; then
+              echo "PR #${pr_number} already has a 'success' status. Skipping."
+            else
+              echo "PR #${pr_number} needs a check. Adding to the list."
+              # Add the PR number to our JSON array
+              PRS_TO_RUN=$(echo "$PRS_TO_RUN" | jq --argjson pr_num "$pr_number" '. + [$pr_num]')
+            fi
+          done
+          
+          echo "PRs to be checked: $PRS_TO_RUN"
+          echo "prs=$PRS_TO_RUN" >> "$GITHUB_OUTPUT"
+
+  # This job creates a dynamic matrix of jobs, one for each PR found above
+  trigger-workflows:
+    needs: find-prs-to-check
+    # Only run this job if the previous job actually found PRs
+    if: fromJson(needs.find-prs-to-check.outputs.prs)[0] != null
+    runs-on: ubuntu-latest
+    strategy:
+      # Create a job for each PR number in the JSON array
+      matrix:
+        pr_number: ${{ fromJson(needs.find-prs-to-check.outputs.prs) }}
+      # Prevent one failure from canceling the entire batch
+      fail-fast: false
+
+    steps:
+      - name: 'Invoke Manual Status Setter workflow for PR #${{ matrix.pr_number }}'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Triggering workflow for PR #${{ matrix.pr_number }}"
+          # This command calls the other workflow file by name and passes the PR number
+          gh workflow run manual-status-setter.yml \
+            --ref ${{ github.ref }} \
+            -f pr_number=${{ matrix.pr_number }}
