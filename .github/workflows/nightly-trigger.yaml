@@ -83,4 +83,4 @@ jobs:
         run: |
           echo "Triggering workflow for PR #${{ matrix.pr_number }}"
           # This command calls the other workflow file by name and passes the PR number
-          gh workflow run manual-status-setter.yml -f pr_number=${{ matrix.pr_number }} -R ${{ github.repository }}
+          gh workflow run manual-status-setter.yaml -f pr_number=${{ matrix.pr_number }} -R ${{ github.repository }}
