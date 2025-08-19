@@ -29,7 +29,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Get all open PRs with their number and head commit SHA
-          OPEN_PRS=$(gh pr list --state open --json number,headRefOid)
+          OPEN_PRS=$(gh pr list --state open --json number,headRefOid -R ${{ github.repository }})
           
           # Initialize an empty JSON array for PRs that need to be run
           PRS_TO_RUN="[]"
