@@ -60,7 +60,8 @@ jobs:
           done
           
           echo "PRs to be checked: $PRS_TO_RUN"
-          echo "prs=$PRS_TO_RUN" >> "$GITHUB_OUTPUT"
+          # Compact the JSON array to a single line for the output
+          echo "prs=$(echo $PRS_TO_RUN | jq -c .)" >> "$GITHUB_OUTPUT"
 
   # This job creates a dynamic matrix of jobs, one for each PR found above
   trigger-workflows:
