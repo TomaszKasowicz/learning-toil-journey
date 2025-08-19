@@ -85,4 +85,6 @@ jobs:
           # This command calls the other workflow file by name and passes the PR number
           gh workflow run manual-status-setter.yml \
             --ref ${{ github.ref }} \
-            -f pr_number=${{ matrix.pr_number }}
+            -f pr_number=${{ matrix.pr_number }} \
+            -R ${{ github.repository }}
+            
