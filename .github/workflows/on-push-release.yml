@@ -55,13 +55,13 @@ jobs:
           echo '
           {
             "event_type": "journey-release",
-            "client_payload": {
-              "repository": "${{ github.repository }}",
-              "packages": [
-                "@bb/package1@1.0.0",
-                "@bb/package2@1.0.0",
-                "@bb/package3@1.0.0"
-              ]
+            "client_payload": { 
+              "sourceContext": { 
+                "repository": "${{ github.repository }}", 
+                "jiraTicket": "JIRA-12345", 
+                "author": "${{ github.actor }}" 
+              }, 
+              "npmPackages": [ "package1@1.2.3", "package2@1.2.3"] 
             }
           }
           ' | curl -L \
